@@ -1,70 +1,82 @@
-int pins[5] = {A0, A1, A2, A3, A4}; // thumb, index, middle, ring, pinky
-int initReadings[5] = {0, 0, 0, 0, 0};
-float scores[5] = {0, 0, 0, 0, 0};
+// ASL Glove - 3 Flex Sensors (Thumb, Index, Middle)
+// Letters recognized: A, B, L, F, D, M
 
-// 0 = straight, 0.5 = half bent, 1 = fully bent
-float aslLetters[26][5] = {
-  {0.5, 1, 1, 1, 1},  // A
-  {0, 0, 0, 0, 0},    // B (all straight)
-  {0.5, 0.5, 0.5, 0.5, 0.5},  // C (curved)
-  {1, 0, 1, 1, 1},    // D (index up)
-  {1, 1, 1, 1, 1},    // E (all curled)
-  {0.5, 0.5, 1, 1, 1},// F (O shape)
-  {0.5, 0, 0, 1, 1},  // G (thumb+index extended sideways)
-  {0.5, 0, 0, 1, 1},  // H (similar to G)
-  {1, 1, 1, 1, 0},    // I (pinky up)
-  {1, 1, 1, 1, 0.5},  // J (pinky up + curve)
-  {0.5, 0, 0.5, 1, 1},// K (thumb touches middle, index up)
-  {0.5, 0, 1, 1, 1},  // L (thumb+index make L)
-  {0.5, 1, 1, 0.5, 0.5},// M (three fingers over thumb)
-  {0.5, 1, 1, 1, 0.5},// N (two fingers over thumb)
-  {0.5, 0.5, 0.5, 0.5, 0.5},// O (circular)
-  {0.5, 0, 0, 1, 1},  // P (like K downward)
-  {0.5, 0, 0, 1, 1},  // Q (like G downward)
-  {1, 0, 0, 1, 1},    // R (index and middle crossed)
-  {1, 1, 1, 1, 1},    // S (fist)
-  {1, 1, 1, 0, 0},    // T (thumb under index)
-  {1, 0, 0, 1, 1},    // U (index+middle up)
-  {1, 0.5, 0.5, 1, 1},// V (two-finger V)
-  {1, 0, 0, 0, 1},    // W (three fingers up)
-  {1, 0.5, 1, 1, 1},  // X (index bent)
-  {0.5, 1, 1, 1, 0},  // Y (thumb + pinky out)
-  {0, 0, 0, 0, 0.5}   // Z (scribble motion but treat as mostly straight)
-};
+const int numSensors = 3;
+int pins[numSensors] = {A3, A2, A1};     // Thumb, Index, Middle
+int straight[numSensors];
+int bent[numSensors];
+int readings[numSensors];
+bool states[numSensors];                 // 0 = straight, 1 = bent
+int lastStates[numSensors];              // For hysteresis
 
 void setup() {
   Serial.begin(9600);
-  for (int i = 0; i < 5; i++)
-    initReadings[i] = analogRead(pins[i]);
-  Serial.println("Calibrated.");
-}
+  delay(1000);
+  Serial.println("\n=== ASL Glove Calibration ===");
+  Serial.println("Keep all fingers STRAIGHT...");
+  delay(3000);
 
-void calcFingers() {
-  for (int i = 0; i < 5; i++) {
-    scores[i] = constrain(floor((analogRead(pins[i]) - initReadings[i]) / 5),0, 2) / 2.0;
+  for (int i = 0; i < numSensors; i++) {
+    straight[i] = analogRead(pins[i]);
   }
-}
 
-char matchLetter() {
-  float minError = 9999;
-  int best = -1;
-  for (int l = 0; l < 26; l++) {
-    float err = 0;
-    for (int f = 0; f < 5; f++)
-      err += abs(aslLetters[l][f] - scores[f]);
-    if (err < minError) {
-      minError = err;
-      best = l;
-    }
+  Serial.println("Now bend all fingers FULLY...");
+  delay(3000);
+
+  for (int i = 0; i < numSensors; i++) {
+    bent[i] = analogRead(pins[i]);
+    lastStates[i] = 0;
   }
-  const char* letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  return letters[best];
+
+  Serial.println("\nCalibration complete!");
+  Serial.println("Start signing...\n");
 }
 
 void loop() {
-  calcFingers();
-  char letter = matchLetter();
-  Serial.print("Detected: ");
-  Serial.println(letter);
-  delay(300);
+  for (int i = 0; i < numSensors; i++) {
+    readings[i] = analogRead(pins[i]);
+
+    int diff = abs(bent[i] - straight[i]);
+    int threshold = (straight[i] + bent[i]) / 2;
+
+    // Finger-specific calibration tweaks
+    if (i == 0) {
+      // Thumb – wide range, make slightly forgiving
+      threshold -= diff * 0.05;
+    } 
+    else if (i == 1) {
+      // Index – slightly less sensitive
+      threshold += diff * 0.2;
+    } 
+    else if (i == 2) {
+      // Middle – make it easier to count as bent (more lenient)
+      threshold -= diff * 0.35; // was 0.25, now more lenient
+    }
+
+    // Add hysteresis (to prevent flickering near threshold)
+    int buffer = diff * 0.05; // 5% buffer
+    if (readings[i] > threshold + buffer) states[i] = 1;  // bent
+    else if (readings[i] < threshold - buffer) states[i] = 0; // straight
+    else states[i] = lastStates[i]; // keep last state if within buffer
+
+    lastStates[i] = states[i];
+  }
+
+  char letter = detectLetter(states[0], states[1], states[2]);
+  if (letter != '-') {
+    Serial.print("Detected: ");
+    Serial.println(letter);
+    delay(400);
+  }
+}
+
+// Function to classify based on states (thumb, index, middle)
+char detectLetter(bool thumb, bool index, bool middle) {
+  if (thumb && !index && !middle) return 'A';  // Thumb straight, others bent
+  if (!thumb && index && middle) return 'B';   // Thumb bent, others straight
+  if (thumb && index && !middle) return 'L';   // Thumb & index straight, middle bent
+  if (!thumb && !index && middle) return 'F';  // Thumb & index bent, middle straight
+  if (!thumb && index && !middle) return 'D';  // Thumb + middle bent, index straight
+  if (!thumb && !index && !middle) return 'M'; // All bent
+  return '-';
 }
