@@ -5,7 +5,6 @@ import mediapipe as mp
 
 imagesSinceInitialization = 0
 perCategoryTarget = 2400
-perOrientationTarget = perCategoryTarget // 6
 
 BaseOptions = mp.tasks.BaseOptions
 HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -62,7 +61,7 @@ def UpdateLabelsAndOrientation():
     try:
         target_label = letterhash[input("Enter target label: ").upper()]
     except KeyError:
-        print("Invalid label, might be on Tryjobs, if not on TryJobs, restart the program and give it anothe try.")
+        print("Invalid label, might be on Tryjobs, if not on TryJobs, restart the program and give it another try.")
         quit()
     target_orientation = int(input(
         "1) Wrist up\n"
@@ -86,6 +85,7 @@ def transform_landmarks():
     def rot(df, xsign=1, ysign=1, swap=False):
         out = df.copy()
         for k in range(20):
+            # 20 landmarks (since wrist is subtracted from all points and taken as origin)
             x = df[f"lm_{3*k}"]
             y = df[f"lm_{3*k+1}"]
             if swap:
