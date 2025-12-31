@@ -59,7 +59,11 @@ def SuggestLabels(filename="data.csv"):
 
 def UpdateLabelsAndOrientation():
     global target_label, target_orientation
-    target_label = letterhash[input("Enter target label: ").upper()]
+    try:
+        target_label = letterhash[input("Enter target label: ").upper()]
+    except KeyError:
+        print("Invalid label, might be on Tryjobs, if not on TryJobs, restart the program and give it anothe try.")
+        quit()
     target_orientation = int(input(
         "1) Wrist up\n"
         "2) Wrist down\n"
@@ -68,9 +72,15 @@ def UpdateLabelsAndOrientation():
         "5) Wrist toward camera\n"
         "6) Wrist opposite camera\n"
     ))
+    if target_orientation < 1 or target_orientation > 6:
+        print("Invalid orientation, try again")
+        quit()
 
 
 def transform_landmarks():
+    if not os.path.exists("data.csv"):
+        print("No data.csv found, try again after capturing some data")
+        return
     datacsv = pd.read_csv("data.csv")
 
     def rot(df, xsign=1, ysign=1, swap=False):
