@@ -14,7 +14,7 @@ HandLandmarker = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
 
-MODEL_PATH = "hand_landmarker.task"
+MODEL_PATH = "../hand_landmarker.task"
 
 last_label = None
 current_label = None

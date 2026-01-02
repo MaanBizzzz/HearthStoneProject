@@ -1,27 +1,59 @@
 import cv2
 import mediapipe as mp
-mp_drawing = mp.solutions.drawing_utils
-mp_drawing_styles = mp.solutions.drawing_styles
-mp_hands = mp.solutions.hands
+
+BaseOptions = mp.tasks.BaseOptions
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+MODEL_PATH = "../hand_landmarker.task"
+
+current_landmarks = None
+
+def hand_callback(result, output_image, timestamp_ms):
+    global current_landmarks
+    if result.hand_landmarks:
+        current_landmarks = result.hand_landmarks
+    else:
+        current_landmarks = None
+
+options = HandLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path=MODEL_PATH),
+    running_mode=VisionRunningMode.LIVE_STREAM,
+    num_hands=2,
+    result_callback=hand_callback
+)
+
+landmarker = HandLandmarker.create_from_options(options)
 
 cam = cv2.VideoCapture(0)
-with mp_hands.Hands(model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
-  while cam.isOpened():
-    success, image = cam.read()
-    if not success:
-      print("Ignoring empty camera frame.")
-      break
+timestamp_ms = 0
 
-    image.flags.writeable = False
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = hands.process(image)
+while cam.isOpened():
+    ret, frame = cam.read()
+    if not ret:
+        break
 
-    image.flags.writeable = True
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    if results.multi_hand_landmarks:
-      for hand_landmarks in results.multi_hand_landmarks:
-        mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS, mp_drawing_styles.get_default_hand_landmarks_style(), mp_drawing_styles.get_default_hand_connections_style())
-    cv2.imshow('MediaPipe Hands', image)
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(mp.ImageFormat.SRGB, frame_rgb)
+    landmarker.detect_async(mp_image, timestamp_ms)
+    timestamp_ms += 1
+
+    if current_landmarks:
+        h, w, _ = frame.shape
+        for hand in current_landmarks:
+            for lm in hand:
+                cv2.circle(
+                    frame,
+                    (int(lm.x * w), int(lm.y * h)),
+                    4,
+                    (0, 255, 0),
+                    -1
+                )
+
+    cv2.imshow("MediaPipe Hands", frame)
     if cv2.waitKey(5) & 0xFF == 27:
-      break
+        break
+
 cam.release()
+cv2.destroyAllWindows()
