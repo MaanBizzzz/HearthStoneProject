@@ -15,10 +15,7 @@ class_names = [
     'del','nothing','space'
 ]
 
-global last_label, current_label
-last_label = None
 lastspoken = None
-current_label = None
 label_lock = threading.Lock()
 landmark_queue = queue.Queue(maxsize=5)
 
@@ -106,13 +103,6 @@ while cam.isOpened():
                 lastspoken = labelbuffer[double_letter_frames]
     except queue.Empty:
         pass
-
-    with label_lock:
-        show = current_label
-
-    if show:
-        cv2.putText(frame, show, (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
 
     cv2.imshow("Hand Sign Prediction", frame)
     if cv2.waitKey(5) & 0xFF == 27:
