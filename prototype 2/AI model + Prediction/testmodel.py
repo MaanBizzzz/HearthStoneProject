@@ -2,12 +2,43 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import tensorflow as tf
-from gtts import gTTS as tts
-from playsound import playsound
-import os
+import threading
+import queue
+import platform
+import subprocess
 
 model = tf.keras.models.load_model("asl_cnn_model_rel.h5")
-class_names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'del', 'nothing', 'space']
+
+class_names = [
+    'A','B','C','D','E','F','G','H','I','J','K','L','M',
+    'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+    'del','nothing','space'
+]
+
+global last_label, current_label
+last_label = None
+lastspoken = None
+current_label = None
+label_lock = threading.Lock()
+landmark_queue = queue.Queue(maxsize=5)
+
+# important for speed of single and double letters while testing, edit as you want
+first_letter_frames = 5
+double_letter_frames = 15
+
+single_lower_limit_index = double_letter_frames-first_letter_frames
+upper_limit_index = double_letter_frames + 1
+
+def speak(label):
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.Popen(["say", label])
+    elif system == "Windows":
+        import comtypes.client
+        speaker = comtypes.client.CreateObject("SAPI.SpVoice")
+        speaker.Speak(label)
+    else:
+        subprocess.Popen(["spd-say", label])
 
 BaseOptions = mp.tasks.BaseOptions
 HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -16,36 +47,20 @@ VisionRunningMode = mp.tasks.vision.RunningMode
 
 MODEL_PATH = "../hand_landmarker.task"
 
-last_label = None
-current_label = None
-
 def hand_callback(result, output_image, timestamp_ms):
-    global last_label, current_label
-
     if not result.hand_landmarks:
-        current_label = None
         return
-
-    landmarks = result.hand_landmarks[0]
-    pts = np.array([[lm.x, lm.y, lm.z] for lm in landmarks], dtype=np.float32)
-
+    lm = result.hand_landmarks[0]
+    pts = np.array([[p.x, p.y, p.z] for p in lm], dtype=np.float32)
     ref = pts[0]
     pts = pts - ref
     pts = pts[1:]
     scale = np.max(np.linalg.norm(pts, axis=1))
     pts /= (scale + 1e-6)
-
-    data = np.expand_dims(pts, axis=0)
-    preds = model.predict(data, verbose=0)
-    label = class_names[np.argmax(preds)]
-    current_label = label
-
-    if label != last_label:
-        letter = tts(text=label, lang='en')
-        letter.save("letter.mp3")
-        playsound("letter.mp3", block=False)
-        os.remove("letter.mp3")
-        last_label = label
+    try:
+        landmark_queue.put_nowait(pts)
+    except queue.Full:
+        pass
 
 options = HandLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=MODEL_PATH),
@@ -58,7 +73,7 @@ landmarker = HandLandmarker.create_from_options(options)
 
 cam = cv2.VideoCapture(0)
 timestamp_ms = 0
-
+labelbuffer = []
 while cam.isOpened():
     ret, frame = cam.read()
     if not ret:
@@ -69,9 +84,35 @@ while cam.isOpened():
     landmarker.detect_async(mp_image, timestamp_ms)
     timestamp_ms += 1
 
-    if current_label:
-        cv2.putText(frame, current_label, (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
+    try:
+        pts = landmark_queue.get_nowait()
+        data = np.expand_dims(pts, axis=0)
+        preds = model.predict(data, verbose=0)
+        label = class_names[np.argmax(preds)]
+
+        with label_lock:
+            labelbuffer.append(label)
+            if len(labelbuffer) > upper_limit_index:
+                labelbuffer.pop(0)
+            if len(labelbuffer) < upper_limit_index:
+                continue
+            elif len(set(labelbuffer[single_lower_limit_index:upper_limit_index])) == 1 and labelbuffer[single_lower_limit_index] != labelbuffer[single_lower_limit_index - 1]:
+                if lastspoken != labelbuffer[double_letter_frames]:
+                    speak(labelbuffer[double_letter_frames])
+                    lastspoken = labelbuffer[double_letter_frames]
+            elif len(set(labelbuffer[1:upper_limit_index])) == 1 and labelbuffer[1] != labelbuffer[0]:
+                # allow a duplicate letter here
+                speak(labelbuffer[double_letter_frames])
+                lastspoken = labelbuffer[double_letter_frames]
+    except queue.Empty:
+        pass
+
+    with label_lock:
+        show = current_label
+
+    if show:
+        cv2.putText(frame, show, (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
 
     cv2.imshow("Hand Sign Prediction", frame)
     if cv2.waitKey(5) & 0xFF == 27:
