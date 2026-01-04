@@ -181,11 +181,14 @@ def main():
                     UpdateLabelsAndOrientation()
                     continue
                 if char == "a":
+                    limit = int(input("Enter number of frames to capture: "))
+                    if limit <= 0:
+                        limit = 100 # Default value
                     auto = True
                     counter = 0
             else:
                 counter += 1
-                if counter >= 100:
+                if counter >= limit:
                     auto = False
                     print("Auto mode ended")
 
