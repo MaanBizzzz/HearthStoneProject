@@ -2,50 +2,111 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import tensorflow as tf
+import threading
+import queue
+import platform
+import subprocess
 
 model = tf.keras.models.load_model("asl_cnn_model_rel.h5")
-class_names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'del', 'nothing', 'space']
 
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
+class_names = [
+    'A','B','C','D','E','F','G','H','I','J','K','L','M',
+    'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+    'del','nothing','space'
+]
+
+lastspoken = None
+label_lock = threading.Lock()
+landmark_queue = queue.Queue(maxsize=5)
+
+# important for speed of single and double letters while testing, edit as you want
+first_letter_frames = 5
+double_letter_frames = 15
+
+single_lower_limit_index = double_letter_frames-first_letter_frames
+upper_limit_index = double_letter_frames + 1
+
+def speak(label):
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.Popen(["say", label])
+    elif system == "Windows":
+        import comtypes.client
+        speaker = comtypes.client.CreateObject("SAPI.SpVoice")
+        speaker.Speak(label)
+    else:
+        subprocess.Popen(["spd-say", label])
+
+BaseOptions = mp.tasks.BaseOptions
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+MODEL_PATH = "../hand_landmarker.task"
+
+def hand_callback(result, output_image, timestamp_ms):
+    if not result.hand_landmarks:
+        return
+    lm = result.hand_landmarks[0]
+    pts = np.array([[p.x, p.y, p.z] for p in lm], dtype=np.float32)
+    ref = pts[0]
+    pts = pts - ref
+    pts = pts[1:]
+    scale = np.max(np.linalg.norm(pts, axis=1))
+    pts /= (scale + 1e-6)
+    try:
+        landmark_queue.put_nowait(pts)
+    except queue.Full:
+        pass
+
+options = HandLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path=MODEL_PATH),
+    running_mode=VisionRunningMode.LIVE_STREAM,
+    num_hands=1,
+    result_callback=hand_callback
+)
+
+landmarker = HandLandmarker.create_from_options(options)
 
 cam = cv2.VideoCapture(0)
+timestamp_ms = 0
+labelbuffer = []
+while cam.isOpened():
+    ret, frame = cam.read()
+    if not ret:
+        break
 
-with mp_hands.Hands(static_image_mode=False,
-                    max_num_hands=1,
-                    min_detection_confidence=0.7,
-                    min_tracking_confidence=0.7) as hands:
-    while cam.isOpened():
-        ret, frame = cam.read()
-        if not ret:
-            break
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(image)
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(mp.ImageFormat.SRGB, frame_rgb)
+    landmarker.detect_async(mp_image, timestamp_ms)
+    timestamp_ms += 1
 
-        if results.multi_hand_landmarks:
-            hand_landmarks = results.multi_hand_landmarks[0]
-            data = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark]).flatten()
-            pts = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark], dtype=np.float32).reshape(21, 3)
+    try:
+        pts = landmark_queue.get_nowait()
+        data = np.expand_dims(pts, axis=0)
+        preds = model.predict(data, verbose=0)
+        label = class_names[np.argmax(preds)]
 
-            # make coordinates relative to wrist (landmark 0)
-            ref = pts[0]
-            pts -= ref
-            pts = pts[1:]
-            scale = np.max(np.linalg.norm(pts, axis=1))
-            pts /= (scale + 1e-6)
-            data = np.expand_dims(pts, axis=0)
-            preds = model.predict(data)
-            print(preds)
-            label = class_names[np.argmax(preds)]
+        with label_lock:
+            labelbuffer.append(label)
+            if len(labelbuffer) > upper_limit_index:
+                labelbuffer.pop(0)
+            if len(labelbuffer) < upper_limit_index:
+                continue
+            elif len(set(labelbuffer[single_lower_limit_index:upper_limit_index])) == 1 and labelbuffer[single_lower_limit_index] != labelbuffer[single_lower_limit_index - 1]:
+                if lastspoken != labelbuffer[double_letter_frames]:
+                    speak(labelbuffer[double_letter_frames])
+                    lastspoken = labelbuffer[double_letter_frames]
+            elif len(set(labelbuffer[1:upper_limit_index])) == 1 and labelbuffer[1] != labelbuffer[0]:
+                # allow a duplicate letter here
+                speak(labelbuffer[double_letter_frames])
+                lastspoken = labelbuffer[double_letter_frames]
+    except queue.Empty:
+        pass
 
-            # Drawing
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-            cv2.putText(frame, f"{label}", (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
-
-        cv2.imshow("Hand Sign Prediction", frame)
-        if cv2.waitKey(5) & 0xFF == 27:
-            break
+    cv2.imshow("Hand Sign Prediction", frame)
+    if cv2.waitKey(5) & 0xFF == 27:
+        break
 
 cam.release()
 cv2.destroyAllWindows()
