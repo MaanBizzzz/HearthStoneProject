@@ -3,37 +3,9 @@ const MODEL_URL = "model.json";
 const FIRST_LETTER_FRAMES = 5;
 const DOUBLE_LETTER_FRAMES = 60;
 
-const CLASS_NAMES = [
-  "A",
-  "B",
-  "C",
-  "D",
-  "E",
-  "F",
-  "G",
-  "H",
-  "I",
-  "J",
-  "K",
-  "L",
-  "M",
-  "N",
-  "O",
-  "P",
-  "Q",
-  "R",
-  "S",
-  "T",
-  "U",
-  "V",
-  "W",
-  "X",
-  "Y",
-  "Z",
-  "del",
-  "nothing",
-  "space",
-];
+const CLASS_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
+   "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", 
+   "del", "nothing", "space"];
 
 const videoEl = document.getElementById("video");
 const canvasEl = document.getElementById("canvas");
