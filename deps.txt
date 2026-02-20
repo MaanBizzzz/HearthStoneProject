@@ -6,4 +6,3 @@ tensorflow
 numpy
 comtypes
 pandas
-scikit-learn

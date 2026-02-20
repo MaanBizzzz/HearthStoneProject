@@ -7,6 +7,10 @@ Original file is located at
     https://colab.research.google.com/drive/1zHqcRbBwrH4nI4HFIk4JDrBj-Y3n3nDw
 """
 
+"""
+
+# Comment out if on google colab
+
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -120,4 +124,4 @@ history = model.fit(
 model.save(MODEL_SAVE_PATH)
 print(f"Model saved to {MODEL_SAVE_PATH}")
 
-# This code was from google colab
+"""
