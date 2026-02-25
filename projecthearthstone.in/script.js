@@ -68,7 +68,9 @@ function renderCards() {
     p.textContent = u.description;
 
     const time = document.createElement('time');
-    time.textContent = new Date(u.date).toLocaleDateString();
+    const parsedDate = new Date(u.date);
+    time.setAttribute('datetime', u.date);
+    time.textContent =isNaN(parsedDate) ? u.date: parsedDate.toLocaleDateString();
 
     meta.appendChild(h3);
     meta.appendChild(p);
@@ -212,8 +214,14 @@ function setupDrag() {
 
 window.addEventListener('resize', () => updatePosition(false));
 
+function safeInit() {
+    init().catch(err => {
+        console.error('Failed to initialize updates carousel:', err);
+    });
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', safeInit);
 } else {
-  init();
+    safeInit();
 }
