@@ -7,6 +7,7 @@
 
 body {
     font-family: cooper-hewitt;
+    background-color: var(--bg-color);
 }
 
 #updates-section,
