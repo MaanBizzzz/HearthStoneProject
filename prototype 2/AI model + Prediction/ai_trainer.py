@@ -92,7 +92,7 @@ def build_thicc_cnn(input_shape=(20, 3), num_classes=29, dropout=0.3):
 
 model = build_thicc_cnn((20, 3), num_classes)
 
-# ======== COMPILE ========
+# Compile
 model.compile(
     optimizer=tf.keras.optimizers.Adam(1e-3),
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05),
