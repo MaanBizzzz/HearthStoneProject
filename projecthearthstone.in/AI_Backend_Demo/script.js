@@ -68,12 +68,10 @@ async function predict(pts) {
   if (!model) return null;
 
   return tf.tidy(() => {
-    // create tensor shape (1,20,3)
     const input = tf.tensor([pts], [1, 20, 3], "float32");
 
     const preds = model.predict(input);
     const arr = preds.dataSync();
-
     const idx = arr.indexOf(Math.max(...arr));
 
     return {
